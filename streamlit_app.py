@@ -271,6 +271,7 @@ def build_apa_reference(
     else:
         author_part = site_name or "Author"
 
+    author=author+","
     year_part = year if year else "n.d."
     title_part = title if title else "Title not available"
     site_part = site_name if site_name else ""
