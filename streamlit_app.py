@@ -322,7 +322,7 @@ st.title("URL to RIS (Web Page to EndNote)")
 st.write(
     "Enter a web address. The app will fetch the page, look for metadata to infer "
     "author, year, title, and site name, then create an APA-style web reference "
-    "and a RIS record.'."
+    "and a RIS record."
 )
 
 default_url = "https://www.theguardian.com/australia-news/2025/dec/04/under-16s-are-already-fleeing-to-apps-not-covered-by-australias-social-media-ban-heres-where-theyre-going"
