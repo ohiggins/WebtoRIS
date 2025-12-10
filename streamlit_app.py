@@ -3,6 +3,10 @@
 Streamlit app: given a web address, fetch the page, extract basic metadata,
 build an APA-style web reference, and output a RIS record for EndNote.
 
+Author format:
+- Personal authors are formatted as: Surname, F. M.
+- Corporate authors are left as provided.
+
 Heuristics:
 - Title from citation_title, og:title, twitter:title, or <title>.
 - Author from meta[name="author"], meta[property="article:author"],
@@ -13,7 +17,6 @@ Heuristics:
 
 import re
 import urllib.parse
-from datetime import datetime
 from typing import Dict, List, Optional
 
 import requests
@@ -52,7 +55,7 @@ def extract_meta_tags(soup: BeautifulSoup) -> Dict[str, List[str]]:
         "site_name": [],
     }
 
-    # Standard title tag
+    # <title> tag
     if soup.title and soup.title.string:
         meta_info["meta_title"].append(soup.title.string.strip())
 
@@ -98,25 +101,131 @@ def choose_title(meta: Dict[str, List[str]]) -> Optional[str]:
     return None
 
 
-def choose_authors(meta: Dict[str, List[str]]) -> Optional[str]:
+def is_probable_corporate_author(name: str) -> bool:
     """
-    Pick an author string.
-    Multiple citation_author values are joined with ', '.
+    Simple check to decide if a string is likely a corporate author.
+    If it contains common organisational words or has many words, treat as corporate.
     """
+    lower = name.lower()
+    corp_keywords = [
+        "commission",
+        "department",
+        "council",
+        "university",
+        "government",
+        "ministry",
+        "office",
+        "organisation",
+        "organization",
+        "authority",
+        "association",
+        "society",
+        "board",
+        "institute",
+        "foundation",
+        "centre",
+        "center",
+    ]
+    if any(k in lower for k in corp_keywords):
+        return True
+
+    # Many words often indicates a corporate body rather than a person
+    if len(name.split()) > 4:
+        return True
+
+    return False
+
+
+def format_personal_name(name: str) -> str:
+    """
+    Format a personal name as: Surname, F. M.
+
+    Examples:
+    - "Helen Christensen" -> "Christensen, H."
+    - "Helen J. Christensen" -> "Christensen, H. J."
+    - "H. Christensen" -> "Christensen, H."
+    """
+    name = name.strip()
+    # Remove extra spaces
+    parts = [p for p in name.replace(",", " ").split() if p]
+
+    if not parts:
+        return name
+
+    if len(parts) == 1:
+        # Single token, leave as-is
+        return name
+
+    # Last token as surname
+    surname = parts[-1]
+    given_parts = parts[:-1]
+
+    initials: List[str] = []
+    for gp in given_parts:
+        gp_clean = gp.replace(".", "")
+        if not gp_clean:
+            continue
+        initials.append(gp_clean[0].upper() + ".")
+
+    if initials:
+        return f"{surname}, {' '.join(initials)}"
+    else:
+        return surname
+
+
+def split_author_string(author_str: str) -> List[str]:
+    """
+    Split a raw author meta string into individual names.
+
+    Handles a few simple patterns like:
+    - "Helen Christensen, Andrew Slade"
+    - "Helen Christensen; Andrew Slade"
+    - "Helen Christensen and Andrew Slade"
+    """
+    s = author_str.strip()
+
+    # Replace " and " with comma for splitting
+    s = s.replace(" and ", ", ")
+
+    # Split on commas and semicolons
+    raw_parts = re.split(r"[;,]", s)
+    names = [p.strip() for p in raw_parts if p.strip()]
+
+    return names if names else [author_str.strip()]
+
+
+def choose_authors(meta: Dict[str, List[str]]) -> List[str]:
+    """
+    Pick a list of author strings formatted as:
+    - Personal authors: "Surname, F. M."
+    - Corporate authors: original string
+    """
+    raw_authors: List[str] = []
+
+    # citation_author usually lists each author separately
     if meta["citation_author"]:
-        return ", ".join(meta["citation_author"])
-    if meta["author"]:
-        return meta["author"][0]
-    if meta["article_author"]:
-        return meta["article_author"][0]
-    return None
+        raw_authors.extend(meta["citation_author"])
+    elif meta["author"]:
+        raw_authors.extend(split_author_string(meta["author"][0]))
+    elif meta["article_author"]:
+        raw_authors.extend(split_author_string(meta["article_author"][0]))
+
+    if not raw_authors:
+        return []
+
+    formatted: List[str] = []
+    for a in raw_authors:
+        if is_probable_corporate_author(a):
+            formatted.append(a.strip())
+        else:
+            formatted.append(format_personal_name(a))
+
+    return formatted
 
 
 def extract_year_from_dates(dates: List[str]) -> Optional[str]:
     """Try to find a four digit year in a list of date strings."""
     for d in dates:
-        # Try to parse ISO-like first
-        # Fall back to regex
         match = re.search(r"\b(19|20)\d{2}\b", d)
         if match:
             return match.group(0)
@@ -147,23 +256,23 @@ def choose_site_name(meta: Dict[str, List[str]], url: str) -> str:
 def build_apa_reference(
     url: str,
     title: Optional[str],
-    authors: Optional[str],
+    authors: List[str],
     year: Optional[str],
     site_name: Optional[str],
 ) -> str:
     """
     Build a simple APA style web reference line.
-    This is approximate, but good enough for note and RIS.
+
+    Format:
+    Author(s). (Year). Title. Site name. Retrieved from URL
     """
-    # Author
-    author_part = authors if authors else site_name or "Author"
+    if authors:
+        author_part = ", ".join(authors)
+    else:
+        author_part = site_name or "Author"
 
-    # Year
     year_part = year if year else "n.d."
-
-    # Title
     title_part = title if title else "Title not available"
-
     site_part = site_name if site_name else ""
 
     reference = f"{author_part}. ({year_part}). {title_part}. {site_part}. Retrieved from {url}"
@@ -173,7 +282,7 @@ def build_apa_reference(
 def build_ris_record(
     url: str,
     title: Optional[str],
-    authors: Optional[str],
+    authors: List[str],
     year: Optional[str],
     apa_ref: str,
 ) -> str:
@@ -181,17 +290,17 @@ def build_ris_record(
     Build a RIS record for an electronic resource.
 
     TY: ELEC
-    AU: authors
+    AU: one line per author
     PY: year
     TI: title
     UR: url
-    N1: full APA reference
+    N1: full APA-style reference
     """
     lines: List[str] = []
     lines.append("TY  - ELEC")
 
-    if authors:
-        lines.append(f"AU  - {authors}")
+    for a in authors:
+        lines.append(f"AU  - {a}")
 
     if title:
         lines.append(f"TI  - {title}")
@@ -211,12 +320,12 @@ def build_ris_record(
 st.title("URL to RIS (Web Page to EndNote)")
 
 st.write(
-    "Enter a web address below. The app will fetch the page, look for metadata "
-    "to infer author, year, title, and site name, build an APA-style web "
-    "reference, and create a RIS record for EndNote."
+    "Enter a web address. The app will fetch the page, look for metadata to infer "
+    "author, year, title, and site name, then create an APA-style web reference "
+    "and a RIS record. Personal authors are formatted as 'Surname, F.'."
 )
 
-default_url = "https://www.theguardian.com/australia-news"
+default_url = "https://www.theguardian.com/australia-news/2025/dec/04/under-16s-are-already-fleeing-to-apps-not-covered-by-australias-social-media-ban-heres-where-theyre-going"
 
 url_input = st.text_input("Web address (URL)", value=default_url)
 
@@ -240,7 +349,10 @@ if st.button("Fetch and generate RIS"):
 
             st.subheader("Detected metadata")
             st.write(f"Title: {title or 'Not found'}")
-            st.write(f"Author(s): {authors or 'Not found'}")
+            st.write(
+                "Authors: "
+                + (", ".join(authors) if authors else "Not found")
+            )
             st.write(f"Year: {year or 'Not found'}")
             st.write(f"Site name: {site_name}")
 
