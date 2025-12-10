@@ -271,7 +271,6 @@ def build_apa_reference(
     else:
         author_part = site_name or "Author"
 
-    author=author+","
     year_part = year if year else "n.d."
     title_part = title if title else "Title not available"
     site_part = site_name if site_name else ""
@@ -301,7 +300,7 @@ def build_ris_record(
     lines.append("TY  - ELEC")
 
     for a in authors:
-        lines.append(f"AU  - {a}")
+        lines.append(f"AU  - {a},")
 
     if title:
         lines.append(f"TI  - {title}")
