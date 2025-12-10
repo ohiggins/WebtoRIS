@@ -289,7 +289,7 @@ def build_ris_record(
     """
     Build a RIS record for an electronic resource.
 
-    TY: ELEC
+    TY: WEB
     AU: one line per author
     PY: year
     TI: title
