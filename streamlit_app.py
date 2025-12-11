@@ -287,7 +287,7 @@ def build_ris_record(
     apa_ref: str,
 ) -> str:
     """
-    Build a RIS record for an electronic resource.
+    Build a RIS record for an web electronic resource.
 
     TY: WEB
     AU: one line per author
@@ -297,7 +297,7 @@ def build_ris_record(
     N1: full APA-style reference
     """
     lines: List[str] = []
-    lines.append("TY  - ELEC")
+    lines.append("TY  - WEB")
 
     for a in authors:
         lines.append(f"AU  - {a},")
